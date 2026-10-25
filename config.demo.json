@@ -1,0 +1,30 @@
+{
+  "$comment": "纯演示配置：只有本地假上游，不含任何真实密钥，可安全提交。scripts/demo-mock.cmd 使用它。",
+  "listen": { "host": "127.0.0.1", "port": 8790 },
+  "clientKeys": [
+    { "id": "demo", "key": "sk-fqrh-demo", "note": "演示用客户端 key" }
+  ],
+  "routing": { "maxCandidates": 2, "maxAttempts": 2, "totalBudgetMs": 30000, "maxRateWaitMs": 800 },
+  "aliases": {
+    "gpt-4o-mini": { "model": "mock-model", "priority": ["mock-openai"] }
+  },
+  "providers": [
+    {
+      "id": "mock-openai",
+      "name": "本地假上游（8899）",
+      "baseUrl": "http://127.0.0.1:8899/v1",
+      "protocol": "openai-completions",
+      "endpoints": ["chat", "embeddings", "images"],
+      "headersProfile": "claude-cli",
+      "headers": { "x-fqrh-demo": "1" },
+      "upstreamProxy": "",
+      "models": ["mock-model", "mock-model-pro"],
+      "rpm": 0,
+      "maxConcurrency": 4,
+      "enabled": true,
+      "keys": [
+        { "id": "mock-1", "label": "演示 key", "value": "sk-mock-1", "weight": 1, "dailyQuota": 0, "maxConcurrency": 2 }
+      ]
+    }
+  ]
+}

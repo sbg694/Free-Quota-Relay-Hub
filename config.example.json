@@ -1,0 +1,69 @@
+{
+  "$comment": "FQRH 配置。密钥不要直接写这里：用 {\"file\":\"data/keys/xxx.txt\"} 或 {\"env\":\"VAR\"}。",
+  "listen": { "host": "127.0.0.1", "port": 8790 },
+  "clientKeys": [
+    { "id": "local", "key": "sk-fqrh-local-replace-me", "note": "客户端（Cherry Studio/Cline/脚本）带这个 key 访问网关" }
+  ],
+  "routing": {
+    "maxCandidates": 3,
+    "maxAttempts": 3,
+    "totalBudgetMs": 180000,
+    "maxRateWaitMs": 1500
+  },
+  "aliases": {
+    "gpt-4o-mini": { "model": "grok-chat-fast", "priority": ["relay-backup"] }
+  },
+  "providers": [
+    {
+      "id": "relay-backup",
+      "name": "relay-backup 中转（免费池，grok 系列）",
+      "baseUrl": "https://relay-backup.example.com/v1",
+      "protocol": "openai-completions",
+      "endpoints": ["chat", "responses"],
+      "headersProfile": "none",
+      "headers": {},
+      "upstreamProxy": "",
+      "models": ["grok-4.5", "grok-4.6", "grok-4.7", "grok-chat-fast"],
+      "rpm": 0,
+      "maxConcurrency": 4,
+      "enabled": true,
+      "keys": [
+        { "id": "relay-backup-1", "label": "免费池主 key", "file": "data/keys/backup.txt", "weight": 1, "dailyQuota": 0, "maxConcurrency": 4 }
+      ]
+    },
+    {
+      "id": "mock-openai",
+      "name": "本地 mock 上游（自测用，不产生真实费用）",
+      "baseUrl": "http://127.0.0.1:8899/v1",
+      "protocol": "openai-completions",
+      "endpoints": ["chat", "embeddings", "images"],
+      "headersProfile": "claude-cli",
+      "headers": { "x-fqrh-demo": "1" },
+      "upstreamProxy": "",
+      "models": ["mock-model", "mock-model-pro"],
+      "rpm": 0,
+      "maxConcurrency": 4,
+      "enabled": false,
+      "keys": [
+        { "id": "mock-1", "label": "mock key", "value": "sk-mock-1", "weight": 1, "dailyQuota": 0, "maxConcurrency": 2 }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter（示例：填 OPENROUTER_API_KEY 后把 enabled 改 true）",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "protocol": "openai-completions",
+      "endpoints": ["chat"],
+      "headersProfile": "none",
+      "headers": { "HTTP-Referer": "http://localhost", "X-Title": "FQRH" },
+      "upstreamProxy": "",
+      "models": ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-super-120b-a12b:free"],
+      "rpm": 20,
+      "maxConcurrency": 2,
+      "enabled": false,
+      "keys": [
+        { "id": "or-1", "label": "OpenRouter 主 key", "env": "OPENROUTER_API_KEY", "weight": 1, "dailyQuota": 0, "maxConcurrency": 2 }
+      ]
+    }
+  ]
+}

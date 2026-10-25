@@ -1,0 +1,27 @@
+# 真实配置与密钥：永远不要提交
+config.json
+config.json.bak
+*.bak
+
+# 账本 / 密钥文件
+data/*
+!data/keys/
+data/keys/*
+!data/keys/.gitkeep
+
+# 临时产物
+.tmp-*
+tmp/
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+
+# 构建产物（exe 由 tools/build-exe.cmd 现场生成）
+FQRH-hub.exe
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

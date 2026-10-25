@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run tests
+        run: |
+          node --version
+      - name: Smoke run (mock upstream)
+        run: |
+          node src/mock-upstream.mjs --port 18899 &
+          sleep 1
+          node src/server.mjs --config config.demo.json --port 18790 &
+          sleep 2
+          curl -sf http://127.0.0.1:18790/healthz
