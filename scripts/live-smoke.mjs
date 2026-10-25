@@ -2,7 +2,7 @@
  * 真实链路冒烟：node scripts/live-smoke.mjs
  *
  * 先起网关（node src/server.mjs --config config.json），再跑这个。
- * 会真实调用上游、消耗额度（本项目的 relay-backup 池是免费额度）。
+ * 会真实调用上游、消耗额度（本项目的 relay-free 公开池与 relay-backup 免费额度）。
  *
  * 环境变量：FQRH_URL 默认 http://127.0.0.1:8790，FQRH_KEY 默认取 config.json 的第一个 clientKey
  */
@@ -107,13 +107,17 @@ await step('/v1/responses (若池不支持则应为 503)', async () => {
   return { ms: r.ms, hint: r.status === 503 ? '池未开放 responses 端点（正常）' : 'ok' };
 });
 
-await step('/v1/messages (若池不支持则应为 503)', async () => {
+await step(`/v1/messages 协议转换 (${model})`, async () => {
   const r = await call('/v1/messages', {
     method: 'POST',
-    body: { model, max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+    body: { model, max_tokens: 64, messages: [{ role: 'user', content: '用一句话回答：2+2=?' }] },
   });
-  expect(r.status === 200 || r.status === 503, `status=${r.status}`);
-  return { ms: r.ms, hint: r.status === 503 ? '池未开放 messages 端点（正常）' : 'ok' };
+  expect(r.status === 200 || r.status === 503, `status=${r.status} ${r.text.slice(0, 200)}`);
+  if (r.status === 503) return { ms: r.ms, hint: '无可用池（正常）' };
+  const j = JSON.parse(r.text);
+  expect(j.type === 'message', `返回结构不是 anthropic message: ${r.text.slice(0, 120)}`);
+  const converted = (r.text || '').length > 0;
+  return { ms: r.ms, hint: `converted=${converted} stop_reason=${j.stop_reason}` };
 });
 
 await step('/__admin/state', async () => {
@@ -128,6 +132,25 @@ await step('/__admin/probe-all', async () => {
   expect(r.status === 200, `status=${r.status}`);
   const j = JSON.parse(r.text);
   return { ms: r.ms, hint: j.results.map((x) => `${x.poolId}:${x.ok ? 'ok' : 'FAIL'}`).join(',') };
+});
+
+await step('/__admin/dashboard 面板', async () => {
+  const r = await call('/__admin/dashboard');
+  expect(r.status === 200, `status=${r.status}`);
+  expect(r.text.includes('FQRH 中转池面板'), '面板 HTML 不含标题');
+  return { ms: r.ms, hint: `html=${Math.round(r.text.length / 1024)}KB` };
+});
+
+await step('/__admin/alerts 告警通道', async () => {
+  const t = await call('/__admin/alert-test', { method: 'POST', body: {} });
+  expect(t.status === 200, `alert-test status=${t.status}`);
+  await new Promise((res) => setTimeout(res, 400));
+  const r = await call('/__admin/alerts');
+  expect(r.status === 200, `status=${r.status}`);
+  const j = JSON.parse(r.text);
+  const hit = (j.alerts || []).find((a) => a.kind === 'manual_test');
+  expect(Boolean(hit), '告警没有落库');
+  return { ms: r.ms, hint: `alerts=${j.alerts.length} webhook=${Boolean(j.monitor?.webhook)} delivered=${hit.delivered}` };
 });
 
 const failed = results.filter((r) => !r.ok);

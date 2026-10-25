@@ -10,10 +10,51 @@
     "totalBudgetMs": 180000,
     "maxRateWaitMs": 1500
   },
+  "resilience": {
+    "retries": 4,
+    "backoffMs": 300,
+    "backoffMaxMs": 2500,
+    "jitterMs": 250,
+    "flakyCooldownMs": 2000,
+    "preludeMs": 2500,
+    "retryAfterSec": 2
+  },
+  "monitor": {
+    "enabled": true,
+    "probeIntervalSec": 300,
+    "probeOnStartup": true,
+    "failThreshold": 2,
+    "alertCooldownSec": 1800,
+    "webhookUrl": "",
+    "webhookFormat": "generic"
+  },
   "aliases": {
-    "gpt-4o-mini": { "model": "grok-chat-fast", "priority": ["relay-backup"] }
+    "gpt-4o-mini": { "model": "grok-chat-fast", "priority": ["relay-backup"] },
+    "dsv4.1": { "model": "deepseek-v4.1-flash", "priority": ["relay-free"] },
+    "deepseek-v4.1": { "model": "deepseek-v4.1-flash", "priority": ["relay-free"] }
   },
   "providers": [
+    {
+      "id": "relay-free",
+      "name": "relay-free 免费中转（deepseek-v4.1，共享 key 池，偶发假 401）",
+      "baseUrl": "https://relay-free.example.com/v1",
+      "protocol": "openai-chat",
+      "endpoints": ["chat", "messages", "responses"],
+      "headersProfile": "none",
+      "headers": {},
+      "upstreamProxy": "",
+      "models": ["deepseek-v4.1-flash-free", "deepseek-v4.1-flash"],
+      "modelMap": { "deepseek-v4.1-flash": "deepseek-v4.1-flash-free" },
+      "rpm": 0,
+      "tpm": 0,
+      "maxConcurrency": 6,
+      "priority": 100,
+      "flakyAuth": true,
+      "enabled": true,
+      "keys": [
+        { "id": "public", "label": "公开 key（该站不校验，免注册）", "value": "public", "weight": 1, "dailyQuota": 0, "maxConcurrency": 6 }
+      ]
+    },
     {
       "id": "relay-backup",
       "name": "relay-backup 中转（免费池，grok 系列）",
@@ -24,8 +65,11 @@
       "headers": {},
       "upstreamProxy": "",
       "models": ["grok-4.5", "grok-4.6", "grok-4.7", "grok-chat-fast"],
+      "modelMap": { "gpt-4o-mini": "grok-chat-fast" },
       "rpm": 0,
+      "tpm": 0,
       "maxConcurrency": 4,
+      "priority": 10,
       "enabled": true,
       "keys": [
         { "id": "relay-backup-1", "label": "免费池主 key", "file": "data/keys/backup.txt", "weight": 1, "dailyQuota": 0, "maxConcurrency": 4 }

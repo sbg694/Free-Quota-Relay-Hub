@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FQRH · 中转池面板</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --line:#252a34; --text:#e6e9ef; --dim:#8b93a3;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#4c8dff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, "Microsoft YaHei", monospace; }
+  header { display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line);
+           background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.5px; }
+  .badge { padding:1px 7px; border:1px solid var(--line); border-radius:10px; color:var(--dim); font-size:11px; }
+  .spacer { flex:1; }
+  input { background:#0b0d11; border:1px solid var(--line); color:var(--text); padding:6px 9px; border-radius:6px;
+          font:inherit; width:230px; }
+  button { background:#1d2330; border:1px solid var(--line); color:var(--text); padding:6px 11px; border-radius:6px;
+           font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { padding:16px 18px 48px; max-width:1280px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card .k { color:var(--dim); font-size:11px; }
+  .card .v { font-size:22px; font-weight:600; margin-top:2px; }
+  h2 { font-size:13px; color:var(--dim); font-weight:600; margin:22px 0 8px; letter-spacing:.4px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#1b202a; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .dim { color:var(--dim); }
+  .pill { display:inline-block; padding:0 6px; border-radius:8px; border:1px solid var(--line); font-size:11px; }
+  .keyrow { display:flex; gap:8px; flex-wrap:wrap; }
+  .ops { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:10px; }
+  .op { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .op-t { width:100%; color:var(--dim); font-size:11px; margin-bottom:2px; }
+  select { background:#0b0d11; border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font:inherit; }
+  input.sm { width:100px; } input.md { width:190px; } input.lg { width:240px; }
+  #toast { position:fixed; bottom:18px; right:18px; background:#1d2330; border:1px solid var(--accent); color:var(--text);
+           padding:9px 14px; border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:1; }
+  .hint { color:var(--dim); font-size:11px; }
+  code { color:#9ecbff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FQRH 中转池面板</h1>
+  <span class="badge" id="ver">-</span>
+  <span class="badge" id="up">-</span>
+  <span class="badge" id="tz">-</span>
+  <span class="spacer"></span>
+  <input id="key" type="password" placeholder="客户端 key（sk-fqrh-…）" />
+  <button id="btn-refresh">刷新</button>
+  <button id="btn-probe">立即探活</button>
+  <button id="btn-alert">测试告警</button>
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+
+  <h2>池与密钥</h2>
+  <table>
+    <thead><tr><th>池</th><th>状态</th><th>协议 / 端点</th><th>模型</th><th>限速</th><th>密钥</th></tr></thead>
+    <tbody id="pools"><tr><td colspan="6" class="dim">输入 key 后自动加载</td></tr></tbody>
+  </table>
+
+  <h2>常用操作 <span class="hint">（直接改 config.json：自动备份 .bak + 热重载，无需重启）</span></h2>
+  <div class="ops">
+    <div class="op">
+      <div class="op-t">主用中转站：priority 越大越优先（主用 100 / 备用 10）</div>
+      <select id="op-prio-pool"></select>
+      <input id="op-prio" class="sm" type="number" placeholder="priority" />
+      <button id="op-prio-save">保存优先级</button>
+    </div>
+    <div class="op">
+      <div class="op-t">池启用 / 停用</div>
+      <select id="op-toggle-pool"></select>
+      <button id="op-toggle-on">启用</button>
+      <button id="op-toggle-off">停用</button>
+    </div>
+    <div class="op">
+      <div class="op-t">改上游 key（value 直接写；env/file 走环境变量或密钥文件）</div>
+      <select id="op-key-pool"></select>
+      <input id="op-key-id" class="sm" placeholder="key id" />
+      <input id="op-key-val" class="lg" placeholder="新的 key 值" />
+      <button id="op-key-save">保存上游 key</button>
+    </div>
+    <div class="op">
+      <div class="op-t">改客户端 key（网关门禁，所有客户端要同步改）</div>
+      <input id="op-client-id" class="sm" placeholder="clientKey id（如 local）" />
+      <input id="op-client-key" class="lg" placeholder="新的客户端 key" />
+      <button id="op-client-save">保存客户端 key</button>
+    </div>
+    <div class="op">
+      <div class="op-t">缓冲参数（瞬时故障重试）</div>
+      <input id="op-retries" class="sm" type="number" placeholder="retries" />
+      <input id="op-prelude" class="sm" type="number" placeholder="preludeMs" />
+      <button id="op-res-save">保存缓冲参数</button>
+    </div>
+    <div class="op">
+      <div class="op-t">配置</div>
+      <button id="op-reload">从磁盘重载配置</button>
+      <span class="hint" id="op-cfgpath">-</span>
+    </div>
+  </div>
+
+  <h2>中转站管理 <span class="hint">（添加/删除官方提供商：保存即写 config.json 并热重载，不用重启）</span></h2>
+  <div class="ops">
+    <div class="op">
+      <div class="op-t">添加 / 更新提供商</div>
+      <input id="np-id" class="sm" placeholder="id（英文，如 deepseek）" />
+      <input id="np-name" class="md" placeholder="显示名（可选）" />
+      <input id="np-url" class="lg" placeholder="Base URL，如 https://api.deepseek.com/v1" />
+      <select id="np-proto">
+        <option value="chat">chat（OpenAI 兼容）</option>
+        <option value="messages">messages（Anthropic）</option>
+        <option value="responses">responses</option>
+      </select>
+      <input id="np-models" class="lg" placeholder="模型（逗号分隔），如 deepseek-chat,deepseek-reasoner" />
+      <input id="np-key" class="lg" placeholder="API key；也可填 env:变量名 或 file:路径" />
+      <input id="np-endpoints" class="md" placeholder="端点（默认 chat）" value="chat" />
+      <input id="np-prio" class="sm" type="number" placeholder="priority" value="0" />
+      <label class="hint"><input id="np-flaky" type="checkbox" /> flakyAuth</label>
+      <button id="np-scan">扫描模型</button>
+      <button id="np-save">保存提供商</button>
+      <span class="hint" id="np-hint">同 id 会覆盖更新；key 写入本机 config.json（已 gitignore）</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>id</th><th>Base URL</th><th>模型</th><th>协议 / 端点</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="manage"><tr><td colspan="7" class="dim">加载中…</td></tr></tbody>
+  </table>
+
+  <h2>别名（aliases）<span class="hint">客户端可以用别名，网关自动映射到真实模型；删提供商时悬空别名会自动清理</span></h2>
+  <div class="ops">
+    <div class="op">
+      <div class="op-t">添加 / 更新别名</div>
+      <input id="al-name" class="sm" placeholder="别名，如 chat" />
+      <input id="al-model" class="md" placeholder="真实模型名，如 mimo-v2.6-flash" />
+      <input id="al-priority" class="md" placeholder="优先池（可选，逗号分隔）" />
+      <button id="al-save">保存别名</button>
+      <span class="hint">模型名要和上游一致；别名可随时删除</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>别名</th><th>映射到模型</th><th>优先池</th><th>操作</th></tr></thead>
+    <tbody id="aliases"><tr><td colspan="4" class="dim">加载中…</td></tr></tbody>
+  </table>
+
+  <h2>今日账本 / 失败分类 / 转换</h2>
+  <div class="cards" id="ledger"></div>
+
+  <h2>告警（最近 20 条）</h2>
+  <table>
+    <thead><tr><th>时间</th><th>级别</th><th>池</th><th>类型</th><th>内容</th><th>推送</th></tr></thead>
+    <tbody id="alerts"><tr><td colspan="6" class="dim">-</td></tr></tbody>
+  </table>
+
+  <h2>最近请求</h2>
+  <table>
+    <thead><tr><th>时间</th><th>端点</th><th>池 / key</th><th>模型</th><th>状态</th><th>耗时</th><th>tokens</th></tr></thead>
+    <tbody id="recent"><tr><td colspan="7" class="dim">-</td></tr></tbody>
+  </table>
+  <p class="hint">面板可读可写：上方「常用操作」直接改 <code>config.json</code>（自动备份 <code>config.json.bak</code> 并热重载，不用重启）；key 只存在浏览器 localStorage；数据每 5s 自动刷新。管理接口：<code>GET /__admin/state</code> · <code>GET/POST /__admin/config</code> · <code>POST /__admin/reload</code></p>
+</main>
+<div id="toast"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+// 支持 /__admin/dashboard?key=… 一次性写入（随后从地址栏抹掉），方便快速打开与截图
+try {
+  const q = new URLSearchParams(location.search);
+  if (q.get('key')) {
+    localStorage.setItem('fqrh-key', q.get('key').trim());
+    history.replaceState(null, '', location.pathname);
+  }
+} catch { /* ignore */ }
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const num = (n) => (n == null ? '-' : Number(n).toLocaleString('zh-CN'));
+// 时间统一按「本机时区」显示（库里存的是 UTC ISO）
+const fmtTime = (iso, withDate) => {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  const date = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  const time = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  return withDate ? date + ' ' + time : time;
+};
+let timer = null;
+let cfgCache = null;
+let cfgLoaded = false;
+
+function toast(msg, bad) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.style.borderColor = bad ? 'var(--bad)' : 'var(--accent)';
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function key() { return localStorage.getItem('fqrh-key') || ''; }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { ...(opts.body ? { 'content-type': 'application/json' } : {}), authorization: 'Bearer ' + key(), ...(opts.headers || {}) },
+  });
+  const text = await r.text();
+  let body; try { body = JSON.parse(text); } catch { body = text; }
+  if (!r.ok) throw new Error((body && body.error && body.error.message) || ('HTTP ' + r.status));
+  return body;
+}
+
+function card(k, v, cls) {
+  return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v ' + (cls || '') + '">' + v + '</div></div>';
+}
+
+function stateClass(s) {
+  if (s === 'active') return 'ok';
+  if (s === 'cooling') return 'warn';
+  if (s === 'dead' || s === 'exhausted') return 'bad';
+  return 'dim';
+}
+
+async function load() {
+  if (!key()) { toast('先填客户端 key', true); return; }
+  try {
+    const st = await api('/__admin/state');
+    const al = await api('/__admin/alerts');
+    $('#ver').textContent = 'v' + st.version;
+    $('#up').textContent = '运行 ' + Math.floor((st.uptimeSec || 0) / 60) + ' 分钟';
+    $('#tz').textContent = '本地时间 ' + (Intl.DateTimeFormat().resolvedOptions().timeZone || 'local');
+    if (!cfgLoaded) { cfgLoaded = true; loadEditable().catch(function (e) { toast(e.message, true); }); }
+    const m = st.metrics || {};
+    $('#cards').innerHTML =
+      card('总请求', num(m.total)) +
+      card('成功', num(m.success), 'ok') +
+      card('失败', num(m.failed), m.failed ? 'bad' : '') +
+      card('协议转换', num(m.converted), m.converted ? 'ok' : '') +
+      card('端点分布', Object.entries(m.byEndpoint || {}).map(([k2, v]) => k2 + ' ' + v).join(' · ') || '-');
+
+    $('#pools').innerHTML = (st.providers || []).map(function (p) {
+      const keys = (p.keys || []).map(function (k) {
+        return '<div class="keyrow"><span class="pill ' + stateClass(k.state) + '">' + esc(k.id) + ' · ' + esc(k.state) + '</span>' +
+          '<span class="dim">health ' + (k.health == null ? '-' : Number(k.health).toFixed(2)) +
+          ' · 今日 ' + num(k.dayTokens) + ' tok</span></div>';
+      }).join('') || '<span class="dim">无 key</span>';
+      return '<tr>' +
+        '<td><b>' + esc(p.id) + '</b><div class="dim">' + esc(p.name || '') + '</div></td>' +
+        '<td class="' + (p.enabled ? 'ok' : 'dim') + '">' + (p.enabled ? '启用' : '停用') + '</td>' +
+        '<td>' + esc(p.protocol) + '<div class="dim">' + esc((p.endpoints || []).join(', ')) + '</div></td>' +
+        '<td class="dim">' + esc((p.models || []).join(', ')) + '</td>' +
+        '<td class="dim">rpm ' + (p.rpm || 0) + ' · tpm ' + (p.tpm || 0) + '</td>' +
+        '<td>' + keys + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="dim">无池</td></tr>';
+
+    const daily = (st.daily || []).reduce(function (a, r) { a.req += r.requests || 0; a.tok += r.tokens || 0; return a; }, { req: 0, tok: 0 });
+    const kinds = Object.entries(m.byKind || {}).map(function (e) { return e[0] + ' ' + e[1]; }).join(' · ');
+    const conv = Object.entries(m.byConversion || {}).map(function (e) { return e[0] + ' ' + e[1]; }).join(' · ');
+    $('#ledger').innerHTML =
+      card('今日请求', num(daily.req)) +
+      card('今日 tokens', num(daily.tok)) +
+      card('失败分类', kinds || '-') +
+      card('转换方向', conv || '-');
+
+    const alerts = (al.alerts || []);
+    $('#alerts').innerHTML = alerts.map(function (a) {
+      const lv = a.level === 'critical' ? 'bad' : 'warn';
+      const d = a.delivered == null ? '<span class="dim">未配置</span>' : (a.delivered ? '<span class="ok">已推送</span>' : '<span class="bad">推送失败</span>');
+      return '<tr><td class="dim">' + esc(fmtTime(a.ts, true)) + '</td>' +
+        '<td class="' + lv + '">' + esc(a.level) + '</td><td>' + esc(a.pool_id || a.poolId) + '</td>' +
+        '<td class="dim">' + esc(a.kind) + '</td><td>' + esc(a.message) + '</td><td>' + d + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="dim">暂无告警</td></tr>';
+
+    $('#recent').innerHTML = (st.recent || []).map(function (r) {
+      const stt = r.status >= 200 && r.status < 300 ? 'ok' : 'bad';
+      return '<tr><td class="dim">' + esc(fmtTime(r.ts, false)) + '</td>' +
+        '<td>' + esc(r.endpoint) + '</td><td class="dim">' + esc(r.pool_id || '-') + ' / ' + esc(r.key_id || '-') + '</td>' +
+        '<td class="dim">' + esc(r.upstream_model || r.client_model || '-') + '</td>' +
+        '<td class="' + stt + '">' + esc(r.status) + (r.error_kind ? ' ' + esc(r.error_kind) : '') + '</td>' +
+        '<td class="dim">' + (r.total_ms == null ? '-' : r.total_ms + 'ms') + (r.first_token_ms ? ' / 首包 ' + r.first_token_ms + 'ms' : '') + '</td>' +
+        '<td class="dim">' + num((r.prompt_tokens || 0) + (r.completion_tokens || 0)) + '</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="dim">暂无请求</td></tr>';
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+/* ---------- 常用操作：直接写 config.json（自动备份 + 热重载） ---------- */
+const cleanKey = (k) => {
+  const out = { id: k.id };
+  if (k.label) out.label = k.label;
+  if (k.weight != null) out.weight = k.weight;
+  if (k.env) out.env = k.env;
+  if (k.file) out.file = k.file;
+  if (k.value) out.value = k.value;
+  return out;
+};
+
+async function loadEditable() {
+  const c = await api('/__admin/config');
+  cfgCache = c;
+  $('#op-cfgpath').textContent = c.configPath || '';
+  const opts = (c.providers || []).map(function (p) {
+    return '<option value="' + esc(p.id) + '">' + esc(p.id) + ' · priority ' + (p.priority || 0) + (p.enabled ? '' : ' · 已停用') + '</option>';
+  }).join('');
+  ['#op-prio-pool', '#op-toggle-pool', '#op-key-pool'].forEach(function (s) { $(s).innerHTML = opts; });
+  const first = (c.providers || [])[0];
+  if (first) $('#op-prio').value = first.priority || 0;
+  const ck = (c.clientKeys || [])[0];
+  if (ck) { $('#op-client-id').value = ck.id; $('#op-client-key').placeholder = '新的客户端 key（当前 ' + ck.keyMasked + '）'; }
+  const rz = c.resilience || {};
+  $('#op-retries').value = rz.retries == null ? '' : rz.retries;
+  $('#op-prelude').value = rz.preludeMs == null ? '' : rz.preludeMs;
+  renderManage(c);
+}
+
+/* ---------- 中转站管理：添加 / 删除 / 启停 / 测试 ---------- */
+function renderManage(c) {
+  const rows = (c.providers || []).map(function (p) {
+    return '<tr>' +
+      '<td><b>' + esc(p.id) + '</b><div class="dim">' + esc(p.name || '') + '</div></td>' +
+      '<td class="dim" style="word-break:break-all">' + esc(p.baseUrl || '') + '</td>' +
+      '<td class="dim">' + esc((p.models || []).join(', ')) + '</td>' +
+      '<td class="dim">' + esc(p.protocol || '') + '<div class="dim">' + esc((p.endpoints || []).join(',')) + '</div></td>' +
+      '<td>' + (p.priority || 0) + '</td>' +
+      '<td class="' + (p.enabled ? 'ok' : 'dim') + '">' + (p.enabled ? '启用' : '停用') + '</td>' +
+      '<td>' +
+        '<button class="sm" data-act="scan" data-id="' + esc(p.id) + '">扫描模型</button> ' +
+        '<button class="sm" data-act="test" data-id="' + esc(p.id) + '">测试</button> ' +
+        '<button class="sm" data-act="toggle" data-id="' + esc(p.id) + '">' + (p.enabled ? '停用' : '启用') + '</button> ' +
+        '<button class="sm" data-act="del" data-id="' + esc(p.id) + '">删除</button>' +
+      '</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="dim">还没有中转站：用上面表单添加官方提供商</td></tr>';
+  $('#manage').innerHTML = rows;
+
+  // 别名表
+  const aliasRows = Object.entries(c.aliases || {}).map(function (e) {
+    const name = e[0]; const a = e[1] || {};
+    return '<tr><td><b>' + esc(name) + '</b></td>' +
+      '<td class="dim">' + esc(a.model || '') + '</td>' +
+      '<td class="dim">' + esc((a.priority || []).join(', ')) + '</td>' +
+      '<td><button class="sm" data-alias="' + esc(name) + '">删除</button></td></tr>';
+  }).join('') || '<tr><td colspan="4" class="dim">没有别名</td></tr>';
+  $('#aliases').innerHTML = aliasRows;
+}
+
+$('#aliases').addEventListener('click', function (e) {
+  const btn = e.target.closest('button[data-alias]');
+  if (!btn) return;
+  const name = btn.getAttribute('data-alias');
+  if (!confirm('删除别名「' + name + '」？')) return;
+  const rest = {};
+  Object.entries((cfgCache && cfgCache.aliases) || {}).forEach(function (e) { if (e[0] !== name) rest[e[0]] = e[1]; });
+  saveConfig({ aliases: rest }, '已删除别名 ' + name);
+});
+
+$('#al-save').onclick = function () {
+  const name = $('#al-name').value.trim();
+  const model = $('#al-model').value.trim();
+  if (!name || !model) return toast('别名和目标模型必填', true);
+  const priority = $('#al-priority').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const next = Object.assign({}, (cfgCache && cfgCache.aliases) || {});
+  next[name] = priority.length ? { model: model, priority: priority } : { model: model };
+  saveConfig({ aliases: next }, '别名已保存：' + name + ' → ' + model);
+  ['#al-name', '#al-model', '#al-priority'].forEach(function (s) { $(s).value = ''; });
+};
+
+$('#manage').addEventListener('click', async function (e) {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  const act = btn.getAttribute('data-act');
+  const p = ((cfgCache && cfgCache.providers) || []).find(function (x) { return x.id === id; });
+  if (act === 'del') {
+    if (!confirm('删除提供商「' + id + '」？它的 key 也会从 config.json 移除')) return;
+    saveConfig({ removeProviders: [id] }, '已删除 ' + id);
+  } else if (act === 'scan') {
+    try {
+      const r = await api('/__admin/scan-models', { method: 'POST', body: JSON.stringify({ providerId: id }) });
+      if (!r.ok) return toast('扫描失败：' + (r.error || ('HTTP ' + r.status)), true);
+      // 填回表单，方便确认/删减后点「保存提供商」更新
+      $('#np-id').value = id;
+      $('#np-name').value = (p && p.name) || id;
+      $('#np-url').value = (p && p.baseUrl) || '';
+      $('#np-proto').value = (p && p.protocol) || 'chat';
+      $('#np-models').value = r.models.join(',');
+      $('#np-endpoints').value = ((p && p.endpoints) || ['chat']).join(',');
+      $('#np-prio').value = (p && p.priority) || 0;
+      toast('扫描到 ' + r.count + ' 个模型，已填入上方表单，确认后点「保存提供商」更新');
+      $('#np-id').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (e) { toast(e.message, true); }
+  } else if (act === 'toggle') {
+    saveConfig({ providers: { [id]: { enabled: !(p && p.enabled) } } }, (p && p.enabled ? '已停用 ' : '已启用 ') + id);
+  } else if (act === 'test') {
+    try {
+      const r = await api('/__admin/probe', { method: 'POST', body: JSON.stringify({ poolId: id }) });
+      toast(id + ' 测试：' + (r.ok ? '✓ 可用（' + (r.latency || 0) + 'ms）' : '✗ ' + (r.status || r.error || '失败')));
+    } catch (err) { toast(err.message, true); }
+  }
+});
+
+$('#np-scan').onclick = async function () {
+  const baseUrl = $('#np-url').value.trim();
+  const rawKey = $('#np-key').value.trim();
+  if (!baseUrl) return toast('先填 Base URL 再扫描', true);
+  const body = { baseUrl: baseUrl, protocol: $('#np-proto').value };
+  if (rawKey.startsWith('env:')) body.env = rawKey.slice(4).trim();
+  else if (rawKey.startsWith('file:')) return toast('file: 形式的 key 先保存提供商，再用行内「扫描模型」', true);
+  else if (rawKey) body.key = rawKey;
+  try {
+    const r = await api('/__admin/scan-models', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) return toast('扫描失败：' + (r.error || ('HTTP ' + r.status)), true);
+    $('#np-models').value = r.models.join(',');
+    toast('扫描到 ' + r.count + ' 个模型，已填入模型框（可删减后保存）');
+  } catch (e) { toast(e.message, true); }
+};
+
+$('#np-save').onclick = function () {
+  const id = $('#np-id').value.trim();
+  const baseUrl = $('#np-url').value.trim();
+  const models = $('#np-models').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const rawKey = $('#np-key').value.trim();
+  if (!id || !baseUrl || !models.length) return toast('id / Base URL / 模型 必填', true);
+  let key = null;
+  if (rawKey.startsWith('env:')) key = { id: 'k1', env: rawKey.slice(4).trim() };
+  else if (rawKey.startsWith('file:')) key = { id: 'k1', file: rawKey.slice(5).trim() };
+  else if (rawKey) key = { id: 'k1', value: rawKey };
+  const provider = {
+    name: $('#np-name').value.trim() || id,
+    baseUrl: baseUrl,
+    protocol: $('#np-proto').value,
+    endpoints: $('#np-endpoints').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+    models: models,
+    priority: Number($('#np-prio').value) || 0,
+    flakyAuth: $('#np-flaky').checked,
+    keys: key ? [key] : undefined,
+  };
+  const exists = ((cfgCache && cfgCache.providers) || []).some(function (p) { return p.id === id; });
+  if (exists) {
+    saveConfig({ providers: { [id]: provider } }, '已更新 ' + id + (key ? '（key 已替换）' : '（保留原 key）'));
+  } else {
+    if (!key) return toast('新提供商需要填 API key（或 env:/file:）', true);
+    saveConfig({ addProviders: [Object.assign({ id: id }, provider)] }, '已添加 ' + id + '，已热重载');
+    ['#np-id', '#np-name', '#np-url', '#np-models', '#np-key'].forEach(function (s) { $(s).value = ''; });
+  }
+};
+
+async function saveConfig(patch, msg) {
+  try {
+    await api('/__admin/config', { method: 'POST', body: JSON.stringify(patch) });
+    toast(msg || '已保存并热重载');
+    await loadEditable();
+    load();
+  } catch (e) { toast(e.message, true); }
+}
+
+$('#op-prio-pool').addEventListener('change', function () {
+  const p = ((cfgCache && cfgCache.providers) || []).find(function (x) { return x.id === $('#op-prio-pool').value; });
+  if (p) $('#op-prio').value = p.priority || 0;
+});
+$('#op-prio-save').onclick = function () {
+  const id = $('#op-prio-pool').value;
+  const priority = Number($('#op-prio').value);
+  if (!id || Number.isNaN(priority)) return toast('选池并填 priority', true);
+  saveConfig({ providers: { [id]: { priority: priority } } }, '优先级已保存：' + id + ' = ' + priority);
+};
+$('#op-toggle-on').onclick = function () {
+  const id = $('#op-toggle-pool').value;
+  if (id) saveConfig({ providers: { [id]: { enabled: true } } }, '已启用 ' + id);
+};
+$('#op-toggle-off').onclick = function () {
+  const id = $('#op-toggle-pool').value;
+  if (id) saveConfig({ providers: { [id]: { enabled: false } } }, '已停用 ' + id);
+};
+$('#op-key-save').onclick = function () {
+  const id = $('#op-key-pool').value;
+  const kid = $('#op-key-id').value.trim();
+  const val = $('#op-key-val').value;
+  if (!id || !kid || !val) return toast('选池、填 key id 和新 key', true);
+  const p = ((cfgCache && cfgCache.providers) || []).find(function (x) { return x.id === id; });
+  const keys = ((p && p.keys) || []).map(cleanKey);
+  const i = keys.findIndex(function (k) { return k.id === kid; });
+  const next = { id: kid, value: val };
+  if (i >= 0) { next.label = keys[i].label; next.weight = keys[i].weight; keys[i] = next; } else keys.push(next);
+  saveConfig({ providers: { [id]: { keys: keys } } }, '上游 key 已更新：' + id + '/' + kid);
+};
+$('#op-client-save').onclick = function () {
+  const id = $('#op-client-id').value.trim();
+  const val = $('#op-client-key').value;
+  if (!id || !val) return toast('填 clientKey id 和新 key', true);
+  saveConfig({ clientKey: { id: id, key: val } }, '客户端 key 已更新（记得同步改客户端）');
+};
+$('#op-res-save').onclick = function () {
+  const resilience = {};
+  if ($('#op-retries').value !== '') resilience.retries = Number($('#op-retries').value);
+  if ($('#op-prelude').value !== '') resilience.preludeMs = Number($('#op-prelude').value);
+  if (!Object.keys(resilience).length) return toast('填 retries / preludeMs', true);
+  saveConfig({ resilience: resilience }, '缓冲参数已保存：' + JSON.stringify(resilience));
+};
+$('#op-reload').onclick = async function () {
+  try { await api('/__admin/reload', { method: 'POST' }); toast('已从磁盘重载'); await loadEditable(); load(); }
+  catch (e) { toast(e.message, true); }
+};
+
+$('#key').value = key();
+$('#key').addEventListener('change', function () {
+  localStorage.setItem('fqrh-key', $('#key').value.trim());
+  load();
+});
+$('#btn-refresh').onclick = load;
+$('#btn-probe').onclick = async function () {
+  try { const r = await api('/__admin/probe-all', { method: 'POST' }); toast('探活完成：' + (r.results || []).map(function (x) { return x.poolId + (x.ok ? ' ✓' : ' ✗'); }).join(' ')); load(); }
+  catch (e) { toast(e.message, true); }
+};
+$('#btn-alert').onclick = async function () {
+  try { await api('/__admin/alert-test', { method: 'POST' }); toast('测试告警已发出（看下方告警表）'); load(); }
+  catch (e) { toast(e.message, true); }
+};
+clearInterval(timer);
+timer = setInterval(function () { if (key()) load(); }, 5000);
+load();
+</script>
+</body>
+</html>

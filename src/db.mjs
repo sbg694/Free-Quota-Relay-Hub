@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS quota_daily (
   tokens    INTEGER DEFAULT 0,
   PRIMARY KEY (day, key_id)
 );
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id        TEXT PRIMARY KEY,
+  ts        TEXT NOT NULL,
+  level     TEXT,
+  pool_id   TEXT,
+  kind      TEXT,
+  message   TEXT,
+  delivered INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts);
 `;
 
 export function openLedger(dbPath = path.join('data', 'fqrh.db')) {
@@ -61,6 +72,8 @@ export function openLedger(dbPath = path.join('data', 'fqrh.db')) {
   `);
   const qDaily = db.prepare('SELECT key_id, requests, tokens FROM quota_daily WHERE day = ? ORDER BY key_id');
   const qRecent = db.prepare('SELECT * FROM request_logs ORDER BY ts DESC LIMIT ?');
+  const insAlert = db.prepare('INSERT OR REPLACE INTO alerts (id, ts, level, pool_id, kind, message, delivered) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const qAlerts = db.prepare('SELECT * FROM alerts ORDER BY ts DESC LIMIT ?');
 
   return {
     db,
@@ -82,6 +95,15 @@ export function openLedger(dbPath = path.join('data', 'fqrh.db')) {
     },
     recent(n = 20) {
       return qRecent.all(Math.max(1, Math.min(200, n)));
+    },
+    logAlert(a) {
+      insAlert.run(a.id, a.ts, a.level ?? null, a.poolId ?? null, a.kind ?? null, a.message ?? null, a.delivered ? 1 : 0);
+    },
+    markAlertDelivered(id) {
+      db.prepare('UPDATE alerts SET delivered = 1 WHERE id = ?').run(id);
+    },
+    alerts(n = 50) {
+      return qAlerts.all(Math.max(1, Math.min(500, n)));
     },
     close() {
       db.close();

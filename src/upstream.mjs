@@ -223,11 +223,36 @@ export function parseUsageJson(text) {
 
 /* ------------------------------------------------------------------ errors */
 
-export function classifyStatus(status, bodyText = '') {
-  if (status === 401) return 'auth';
-  if (status === 403) {
+/**
+ * v3：免费中转站的"假鉴权失败"。
+ *
+ * 实测 relay-free 这类站点根本不校验 key（空 key 也 200），当它自己的共享密钥池
+ * 暂时耗尽时会返回 401/403 + "API 密钥无效" 之类的伪装错误；几秒后同 key 又能用。
+ * 这种东西不能按 auth 处理（否则 key 被永久拉黑），要按瞬时故障重试。
+ */
+export const TRANSIENT_AUTH_PATTERNS = [
+  /密钥无效/,
+  /密钥.{0,10}(无效|过期|失效)/,
+  /令牌.{0,10}(无效|过期|失效)/,
+  /api[\s_-]?key[^\n]{0,40}(invalid|无效)/i,
+  /invalid[\s_-]?api[\s_-]?key/i,
+  /unauthori[sz]ed/i,
+  /authentication\s+(failed|error)/i,
+  /invalid[\s_-]?(token|credential)/i,
+];
+
+export function looksTransientAuth(bodyText = '') {
+  return TRANSIENT_AUTH_PATTERNS.some((re) => re.test(bodyText));
+}
+
+export function classifyStatus(status, bodyText = '', opts = {}) {
+  const flakyAuth = opts.flakyAuth === true;
+  if (status === 401 || status === 403) {
     // 403 有两种：key 失效（拉黑）与「该分组不允许此端点」（池级策略，不能拉黑 key）
-    if (/does not allow|permission_error|not allowed|dispatch/i.test(bodyText)) return 'endpoint_denied';
+    if (status === 403 && /does not allow|permission_error|not allowed|dispatch/i.test(bodyText)) return 'endpoint_denied';
+    // 免费中转站：实测它不校验 key（空 key 也 200），出现的任何鉴权类错误都是它自己的
+    // 共享池空转/上游 key 过期，按瞬时故障处理，绝不能把本地 key 拉黑。
+    if (flakyAuth) return 'transient_auth';
     return 'auth';
   }
   if (status === 402) return 'quota';
@@ -236,4 +261,23 @@ export function classifyStatus(status, bodyText = '') {
   if (status === 400 && /invalid schema for function|tool.*schema/i.test(bodyText)) return 'tool_schema';
   if (status >= 500) return 'upstream_error';
   return 'bad_request';
+}
+
+/** 200 但 body 是个错误对象（免费站常见的另一种伪装） */
+export function jsonErrorBody(text = '') {
+  try {
+    const j = JSON.parse(text);
+    if (j && j.error && !j.choices && !j.output && !j.content && j.type !== 'message') return j.error;
+  } catch { /* 不是 JSON */ }
+  return null;
+}
+
+/** SSE 文本里是否先出现错误（用于首包缓冲判定） */
+export function looksErrorEvent(text = '') {
+  return /(^|\n)event:\s*error/i.test(text) || /"error"\s*:\s*\{/.test(text);
+}
+
+/** SSE 文本里是否已经出现正文/工具/思考增量（出现即认为流是好的，可以放行） */
+export function looksContentEvent(text = '') {
+  return /"content"\s*:\s*"[^"]|"delta"\s*:\s*"|"text"\s*:\s*"|"partial_json"\s*:\s*"|reasoning_content|message_start|content_block_(start|delta)|response\.(created|output)|output_text\.delta|function_call_arguments\.delta|tool_calls/i.test(text);
 }

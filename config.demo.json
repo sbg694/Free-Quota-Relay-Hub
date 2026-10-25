@@ -5,6 +5,7 @@
     { "id": "demo", "key": "sk-fqrh-demo", "note": "演示用客户端 key" }
   ],
   "routing": { "maxCandidates": 2, "maxAttempts": 2, "totalBudgetMs": 30000, "maxRateWaitMs": 800 },
+  "monitor": { "enabled": true, "probeIntervalSec": 120, "probeOnStartup": true, "failThreshold": 2, "alertCooldownSec": 600 },
   "aliases": {
     "gpt-4o-mini": { "model": "mock-model", "priority": ["mock-openai"] }
   },

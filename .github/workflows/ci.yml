@@ -18,6 +18,7 @@ jobs:
       - name: Run tests
         run: |
           node --version
+          node src/test-convert.mjs
       - name: Smoke run (mock upstream)
         run: |
           node src/mock-upstream.mjs --port 18899 &

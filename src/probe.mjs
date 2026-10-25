@@ -6,13 +6,13 @@
  */
 import { buildHeaders, requestUpstream } from './upstream.mjs';
 
-export async function probePool({ provider, key, timeoutMs = 15000 }) {
+export async function probePool({ provider, key, timeoutMs = 15000, endpoint = null }) {
   const started = Date.now();
   if (!key.value) {
     return { ok: false, status: 0, latency: 0, error: '密钥缺失（env 未设置）' };
   }
 
-  const { headers } = buildHeaders({ provider, keyValue: key.value, inbound: { accept: 'application/json' } });
+  const { headers } = buildHeaders({ provider, keyValue: key.value, inbound: { accept: 'application/json' }, endpoint });
   headers['accept-encoding'] = 'identity';
 
   try {
@@ -30,10 +30,14 @@ export async function probePool({ provider, key, timeoutMs = 15000 }) {
       upstream.res.on('error', resolve);
     });
     let modelCount = null;
+    let models = [];
     try {
       const j = JSON.parse(text);
       const list = Array.isArray(j.data) ? j.data : Array.isArray(j.models) ? j.models : null;
       modelCount = list ? list.length : null;
+      models = list
+        ? list.map((m) => m && (m.id || m.name || m.model)).filter(Boolean).slice(0, 500)
+        : [];
     } catch { /* 不是 JSON 就不统计 */ }
 
     return {
@@ -41,6 +45,7 @@ export async function probePool({ provider, key, timeoutMs = 15000 }) {
       status: upstream.status,
       latency: Date.now() - started,
       modelCount,
+      models,
       headersUsed: {
         profile: provider.headersProfile,
         protocol: provider.protocol,
@@ -51,6 +56,6 @@ export async function probePool({ provider, key, timeoutMs = 15000 }) {
       sample: text.slice(0, 200),
     };
   } catch (err) {
-    return { ok: false, status: 0, latency: Date.now() - started, error: err.message };
+    return { ok: false, status: 0, latency: Date.now() - started, error: (err && (err.message || err.code || err.name)) || 'network error' };
   }
 }

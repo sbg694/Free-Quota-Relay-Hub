@@ -32,8 +32,16 @@ function localDay(d) {
 const db = new DatabaseSync(dbPath);
 const pad = (s, n) => String(s ?? '').padEnd(n);
 const padL = (s, n) => String(s ?? '').padStart(n);
+// 账本里 ts 存 UTC ISO；报表一律按本机时区切天/显示，避免 0–8 点算到前一天
+const DAY_EXPR = "date(ts, 'localtime')";
+const fmtLocal = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso ?? '');
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
 
-console.log(`\n===== FQRH 日报 ${day} =====\n`);
+console.log(`\n===== FQRH 日报 ${day}（本地时区 ${Intl.DateTimeFormat().resolvedOptions().timeZone}）=====\n`);
 
 const daily = db.prepare('SELECT key_id, requests, tokens FROM quota_daily WHERE day = ? ORDER BY tokens DESC').all(day);
 if (!daily.length) {
@@ -50,7 +58,7 @@ if (!daily.length) {
 
 const byEndpoint = db.prepare(`
   SELECT endpoint, COUNT(*) n, SUM(CASE WHEN error_kind IS NULL THEN 1 ELSE 0 END) ok
-  FROM request_logs WHERE substr(ts,1,10) = ? GROUP BY endpoint ORDER BY n DESC
+  FROM request_logs WHERE ${DAY_EXPR} = ? GROUP BY endpoint ORDER BY n DESC
 `).all(day);
 if (byEndpoint.length) {
   console.log('\n-- 端点分布 --');
@@ -59,7 +67,7 @@ if (byEndpoint.length) {
 
 const byError = db.prepare(`
   SELECT error_kind, COUNT(*) n FROM request_logs
-  WHERE substr(ts,1,10) = ? AND error_kind IS NOT NULL GROUP BY error_kind ORDER BY n DESC
+  WHERE ${DAY_EXPR} = ? AND error_kind IS NOT NULL GROUP BY error_kind ORDER BY n DESC
 `).all(day);
 if (byError.length) {
   console.log('\n-- 失败类型 --');
@@ -73,14 +81,14 @@ const recentFails = db.prepare(`
 if (recentFails.length) {
   console.log('\n-- 最近 10 条失败 --');
   for (const r of recentFails) {
-    console.log(`  ${r.ts.slice(0, 19)} ${pad(r.endpoint, 10)} ${pad(r.pool_id, 10)} ${pad(r.key_id, 10)} ${r.status ?? ''} ${pad(r.error_kind, 18)} ${r.total_ms ?? ''}ms`);
+    console.log(`  ${fmtLocal(r.ts)} ${pad(r.endpoint, 10)} ${pad(r.pool_id, 10)} ${pad(r.key_id, 10)} ${r.status ?? ''} ${pad(r.error_kind, 18)} ${r.total_ms ?? ''}ms`);
   }
 }
 
-const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+const since = localDay(new Date(Date.now() - days * 86400000));
 const trend = db.prepare(`
-  SELECT substr(ts,1,10) d, COUNT(*) n, SUM(CASE WHEN error_kind IS NULL THEN 1 ELSE 0 END) ok
-  FROM request_logs WHERE substr(ts,1,10) >= ? GROUP BY d ORDER BY d
+  SELECT ${DAY_EXPR} d, COUNT(*) n, SUM(CASE WHEN error_kind IS NULL THEN 1 ELSE 0 END) ok
+  FROM request_logs WHERE ${DAY_EXPR} >= ? GROUP BY d ORDER BY d
 `).all(since);
 if (trend.length) {
   console.log(`\n-- 最近 ${days} 天趋势 --`);

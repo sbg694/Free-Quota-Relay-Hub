@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-rem FQRH v1 demo: mock upstream (8899) + gateway (8790) with config.demo.json
+rem FQRH demo: mock upstream (8899) + gateway (8790) with config.demo.json (no real keys)
 cd /d "%~dp0.."
 start "FQRH mock upstream" cmd /k node src\mock-upstream.mjs --port 8899
 timeout /t 1 >nul

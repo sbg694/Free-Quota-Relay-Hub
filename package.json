@@ -1,7 +1,7 @@
 {
   "name": "fqrh",
-  "version": "1.0.0",
-  "description": "FQRH v1 — 把多个中转站 / 免费层的 key 收拢成一个 OpenAI 兼容出口（单协议透传、密钥池、额度账本、探活告警）",
+  "version": "3.1.4",
+  "description": "FQRH — 免费额度中转枢纽：多中转站/免费层统一成一个 OpenAI 兼容出口，带跨协议转换、假 401 缓冲、可写面板",
   "type": "module",
   "private": true,
   "engines": {
@@ -11,7 +11,8 @@
     "start": "node src/server.mjs --config config.json",
     "demo": "node src/server.mjs --config config.demo.json",
     "mock": "node src/mock-upstream.mjs --port 8899",
-    "test": "node src/test.mjs",
+    "test": "node src/test-convert.mjs && node src/test.mjs",
+    "flaky": "node scripts/demo-flaky.mjs",
     "smoke": "node scripts/live-smoke.mjs",
     "report": "node scripts/report.mjs"
   },
