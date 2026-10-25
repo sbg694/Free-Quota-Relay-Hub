@@ -11,6 +11,7 @@
  */
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { loadConfig, today, ENDPOINT_PATH } from './config.mjs';
@@ -926,6 +927,13 @@ async function handleAdmin(req, res, url) {
     }
   }
 
+  if (req.method === 'POST' && url.pathname === '/__admin/shutdown') {
+    // v4：优雅关停（改代码后重启用；要求客户端 key，仅本机/局域网可信环境使用）
+    sendJson(res, 200, { ok: true, message: 'shutting down' });
+    setTimeout(() => shutdown('admin'), 100);
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname === '/__admin/scan-models') {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     let provider;
@@ -990,6 +998,28 @@ async function handleAdmin(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
+    // v4：浏览器客户端跨域（默认关闭，config.cors.enabled 打开）
+    const cors = config.cors || { enabled: false, allowOrigins: [] };
+    if (cors.enabled && url.pathname.startsWith('/v1')) {
+      const origin = String(req.headers.origin || '');
+      const allowAll = cors.allowOrigins.includes('*');
+      const allowed = allowAll || Boolean(origin && cors.allowOrigins.includes(origin));
+      if (allowed && origin) {
+        res.setHeader('access-control-allow-origin', origin);
+        res.setHeader('access-control-allow-credentials', 'true');
+        res.setHeader('vary', 'origin');
+      } else if (allowAll) {
+        res.setHeader('access-control-allow-origin', '*');
+      }
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+      res.setHeader('access-control-allow-headers', 'authorization, content-type, x-api-key, anthropic-version, anthropic-beta, openai-beta, x-fqrh-device');
+      res.setHeader('access-control-max-age', '86400');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        return res.end();
+      }
+    }
+
     if (url.pathname === '/healthz') return handleHealth(req, res);
     if (url.pathname === '/metrics') return handleMetrics(req, res);
     if (url.pathname === '/__admin/dashboard') {
@@ -1019,8 +1049,32 @@ setInterval(() => pool.housekeeping(), 5000).unref();
 
 server.listen(port, host, () => {
   console.log(versionLine());
-  console.log(`[fqrh] listening http://${host}:${port}`);
-  console.log(`[fqrh] 面板 http://${host}:${port}/__admin/dashboard`);
+  // 注意：某些 Linux（如带 monitor/虚拟网卡的 Kali）上 os.networkInterfaces() 可能抛
+  // EAFNOSUPPORT（libuv uv_interface_addresses errno 97），不能让它把网关带崩
+  let lanIPs = [];
+  try {
+    lanIPs = Object.values(os.networkInterfaces())
+      .flat()
+      .filter((a) => a && a.family === 'IPv4' && !a.internal)
+      .map((a) => a.address);
+  } catch (err) {
+    console.warn(`[fqrh] 读取网卡地址失败（${err.code || err.message}），跳过局域网入口提示；服务不受影响`);
+  }
+  const allIfaces = host === '0.0.0.0' || host === '::';
+  if (allIfaces) {
+    console.log(`[fqrh] listening on ${host}:${port}（所有网卡，局域网可访问）`);
+    if (!lanIPs.length) console.log('[fqrh] 没检测到局域网 IPv4 地址（当前只能本机访问）');
+    for (const ip of lanIPs) {
+      console.log(`[fqrh]   局域网入口 http://${ip}:${port}/v1   （面板 http://${ip}:${port}/__admin/dashboard）`);
+    }
+    console.log(`[fqrh]   本机入口   http://127.0.0.1:${port}/v1`);
+  } else {
+    console.log(`[fqrh] listening http://${host}:${port}${host === '127.0.0.1' ? '（仅本机；局域网访问请把 listen.host 改成 0.0.0.0）' : ''}`);
+    console.log(`[fqrh] 面板 http://${host}:${port}/__admin/dashboard`);
+  }
+  if (config.cors.enabled) {
+    console.log(`[fqrh] CORS 已开启，允许源：${(config.cors.allowOrigins || []).join(', ') || '(无，等同关闭)'}`);
+  }
   console.log(`[fqrh] config ${config.configPath}`);
   for (const p of config.providers) {
     console.log(`[fqrh]   ${p.id.padEnd(16)} ${p.enabled ? 'on ' : 'off'} endpoints=${p.endpoints.join(',')} models=${p.models.join(',')} rpm=${p.rpm} tpm=${p.tpm}`);

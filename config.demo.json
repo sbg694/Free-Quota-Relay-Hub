@@ -1,6 +1,7 @@
 {
   "$comment": "纯演示配置：只有本地假上游，不含任何真实密钥，可安全提交。scripts/demo-mock.cmd 使用它。",
-  "listen": { "host": "127.0.0.1", "port": 8790 },
+  "listen": { "host": "0.0.0.0", "port": 8790 },
+  "cors": { "enabled": true, "allowOrigins": ["*"] },
   "clientKeys": [
     { "id": "demo", "key": "sk-fqrh-demo", "note": "演示用客户端 key" }
   ],

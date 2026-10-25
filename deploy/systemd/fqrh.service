@@ -1,0 +1,33 @@
+[Unit]
+Description=FQRH v4 免费额度中转网关（局域网）
+Documentation=file:///opt/fqrh/docs/11-linux-deploy.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fqrh
+Group=fqrh
+WorkingDirectory=/var/lib/fqrh
+EnvironmentFile=/etc/fqrh/fqrh.env
+ExecStart=__NODE_BIN__ /opt/fqrh/src/server.mjs --config /var/lib/fqrh/config.json
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+LimitNOFILE=65535
+
+# 加固：只让服务写自己的数据目录，/etc 与 /opt 只读
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/fqrh
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

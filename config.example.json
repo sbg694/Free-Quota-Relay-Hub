@@ -1,6 +1,7 @@
 {
   "$comment": "FQRH 配置。密钥不要直接写这里：用 {\"file\":\"data/keys/xxx.txt\"} 或 {\"env\":\"VAR\"}。",
-  "listen": { "host": "127.0.0.1", "port": 8790 },
+  "listen": { "host": "0.0.0.0", "port": 8790 },
+  "cors": { "enabled": false, "allowOrigins": [] },
   "clientKeys": [
     { "id": "local", "key": "sk-fqrh-local-replace-me", "note": "客户端（Cherry Studio/Cline/脚本）带这个 key 访问网关" }
   ],

@@ -48,6 +48,11 @@ export function loadConfig(file) {
 
   const config = {
     listen: { host: '127.0.0.1', port: 8790, ...(raw.listen || {}) },
+    // v4：局域网/浏览器跨域（默认关闭；allowOrigins 里写具体源，或 ["*"]）
+    cors: {
+      enabled: raw.cors?.enabled === true,
+      allowOrigins: Array.isArray(raw.cors?.allowOrigins) ? raw.cors.allowOrigins.map(String) : [],
+    },
     clientKeys: raw.clientKeys || [],
     routing: { maxCandidates: 3, maxAttempts: 3, totalBudgetMs: 90000, maxRateWaitMs: 1500, ...(raw.routing || {}) },
     monitor: {

@@ -1,7 +1,7 @@
 {
-  "name": "fqrh",
-  "version": "3.1.4",
-  "description": "FQRH — 免费额度中转枢纽：多中转站/免费层统一成一个 OpenAI 兼容出口，带跨协议转换、假 401 缓冲、可写面板",
+  "name": "fqrh-v4",
+  "version": "4.0.4",
+  "description": "FQRH v4 — 局域网统一 AI 出口：多设备 key、可选 CORS、多中转站池、假 401 缓冲",
   "type": "module",
   "private": true,
   "engines": {

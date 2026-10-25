@@ -222,6 +222,7 @@ function writeTestConfig() {
   });
   const cfg = {
     listen: { host: '127.0.0.1', port: GW_PORT },
+    cors: { enabled: true, allowOrigins: ['http://localhost:3333'] },
     clientKeys: [{ id: 'test', key: CLIENT_KEY }],
     routing: { maxCandidates: 4, maxAttempts: 4, totalBudgetMs: 20000, maxRateWaitMs: 1500 },
     resilience: { retries: 2, backoffMs: 10, backoffMaxMs: 40, jitterMs: 0, flakyCooldownMs: 100, preludeMs: 400, retryAfterSec: 1 },
@@ -355,6 +356,16 @@ async function main() {
     check('错误 key → 401', (await req('/v1/models', { key: 'sk-wrong' })).status === 401);
     const models = await req('/v1/models');
     check('/v1/models 返回 mock-model', models.status === 200 && models.text.includes('mock-model'));
+
+    // v4：CORS（局域网/浏览器客户端）
+    const preflight = await req('/v1/models', { method: 'OPTIONS', headers: { origin: 'http://localhost:3333' } });
+    check('CORS 预检 204 并回显允许源',
+      preflight.status === 204 && preflight.headers['access-control-allow-origin'] === 'http://localhost:3333',
+      `${preflight.status} ${preflight.headers['access-control-allow-origin']}`);
+    const corsOk = await req('/v1/models', { headers: { origin: 'http://localhost:3333' } });
+    check('CORS 实际请求带 ACAO', corsOk.headers['access-control-allow-origin'] === 'http://localhost:3333', String(corsOk.headers['access-control-allow-origin']));
+    const corsNo = await req('/v1/models', { headers: { origin: 'http://evil.example' } });
+    check('未允许的 Origin 不回显 ACAO', !corsNo.headers['access-control-allow-origin'], String(corsNo.headers['access-control-allow-origin']));
     check('/v1/models 含 modelMap 的客户端模型名', models.text.includes('client-canonical'));
 
     console.log('\n[2] chat 非流式 + 失败转移（401 → 429 → 成功）');
@@ -477,8 +488,8 @@ async function main() {
     const previewJson = JSON.parse(prev.text || '{}');
     check('convert-preview 返回转换后的请求体', prev.status === 200 && previewJson.request?.system === 's' && Array.isArray(previewJson.request?.messages), prev.text.slice(0, 160));
     const health = JSON.parse((await req('/healthz', { key: null })).text);
-    check('healthz 报 v3 版本与 6 种转换能力', String(health.version).startsWith('3.') && health.capabilities?.conversions?.length === 6, JSON.stringify(health.version));
-    check('healthz 声明瞬时故障缓冲能力', (health.capabilities?.resilience || []).includes('transient-auth-retry'), JSON.stringify(health.capabilities?.resilience));
+    check('healthz 报 v4 版本与 6 种转换能力', String(health.version).startsWith('4.') && health.capabilities?.conversions?.length === 6, JSON.stringify(health.version));
+    check('healthz 声明瞬时故障缓冲 + 局域网能力', (health.capabilities?.resilience || []).includes('transient-auth-retry') && (health.capabilities?.lan || []).includes('cors'), JSON.stringify(health.capabilities?.lan));
 
     console.log('\n[6] 探活复用同一套头 + 批量探活');
     const probe = await req('/__admin/probe', { method: 'POST', body: { poolId: 'mock' } });

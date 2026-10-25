@@ -19,6 +19,7 @@ jobs:
         run: |
           node --version
           node src/test-convert.mjs
+          bash -n scripts/start-gateway.sh scripts/demo-mock.sh scripts/install-linux.sh
       - name: Smoke run (mock upstream)
         run: |
           node src/mock-upstream.mjs --port 18899 &
